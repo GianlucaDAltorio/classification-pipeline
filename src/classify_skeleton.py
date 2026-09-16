@@ -32,7 +32,7 @@ def classify(raw_point):
 if __name__ == "__main__":
     # One raw point on each shape, then the ring's hollow
     # centre (unknown).
-    # [5.99958893, 3.17868816] corresponds to 
+    # [5.99958893, 3.17868816] corresponds to test query.
     for q in ([0.0, -1.8], [0.0, 5.0], [6.8, 1.6],
               [5.99958893, 3.17868816], [4.8, 1.6]):
         print(q, "->", classify(q))
