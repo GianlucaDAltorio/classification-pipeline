@@ -1,0 +1,22 @@
+\begin{algorithm}[!ht]
+\caption{Table-lookup classification (online path).}
+\label{alg:lookup}
+\begin{algorithmic}[1]
+\Require A raw query point $(x, y)$
+\Require One byte table $Q_c$ per class, each $G \times G$, values 0--255
+\Require The scaling bounds $(x_{\min}, x_{\max})$, $(y_{\min}, y_{\max})$ used in training
+\Require The grid size $G$ and a reject threshold $\tau$
+\Ensure A predicted class $\hat{c}$, or \textsc{unknown}
+\State $\tilde{x} \gets \dfrac{x - x_{\min}}{x_{\max} - x_{\min}}$, \quad $\tilde{y} \gets \dfrac{y - y_{\min}}{y_{\max} - y_{\min}}$
+\State $\text{col} \gets \lfloor \tilde{x} \, G \rfloor$, clipped to $[0, G-1]$
+\State $\text{row} \gets \lfloor \tilde{y} \, G \rfloor$, clipped to $[0, G-1]$
+\For{each class $c$}
+    \State $v_c \gets Q_c[\text{row}, \text{col}] / 255$ \Comment{one byte read}
+\EndFor
+\State $\hat{c} \gets \arg\max_c v_c$ \Comment{the winning class}
+\If{$v_{\hat{c}} < \tau$}
+    \State \Return \textsc{unknown} \Comment{outside every learned region}
+\EndIf
+\State \Return $\hat{c}$
+\end{algorithmic}
+\end{algorithm}
