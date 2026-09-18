@@ -1,1 +1,40 @@
+\documentclass[conference]{IEEEtran}
+\usepackage[T1]{fontenc}
+\usepackage{amsmath}
+\usepackage{graphicx}
+\usepackage{booktabs}
+\usepackage{tabularx}
+\usepackage{algorithm}
+\usepackage{algpseudocode} 
+\usepackage{hyperref}
+\algrenewcommand{\algorithmicrequire}{\textbf{Input:}}
+\algrenewcommand{\algorithmicensure}{\textbf{Output:}}
 
+\title{Density-Based Classification from Unlabeled Data for Memory-Constrained Devices}
+\author{
+    \IEEEauthorblockN{Gianluca D'Altorio}
+    \IEEEauthorblockA{Department of Computer Engineering Technology\\
+    Vanier College}
+}\date{\today}
+
+\begin{document}
+\maketitle
+
+\section{Proposed Pipeline}
+\label{sec:pipeline}
+This section describes the part of the pipeline that runs on the implemented device itself.  Everything else, grouping the training data into classes, building a density map for each class, and shrinking those maps down into small byte tables, happens beforehand on a regular computer and is assumed to already be completed.  The device only ever sees the finished byte tables, never the original training data.
+
+Algorithm~\ref{alg:lookup} describes what the device does when it receives a new point to classify.  First, the point is rescaled using the same bounds that were used during training.  That scaled point is then used to figure out which cell of the grid it falls into.  The device reads one stored number from that cell for each class, and picks whichever class has the highest number, unless even the highest number falls below a reject threshold $\tau$ to be trustworthy, in which case the device reports \textsc{unknown} instead of guessing.  This last step matters: without it, the device would confidently name a class in places where it has never actually seen any data. 
+
+Since this whole process is just a few reads and comparisons, it costs the same amount of work no matter how much data was originally used to build the tables, which is why it's cheap enough to run on a device with very little memory.
+
+\input{Algorithm1_ref}
+
+\section{Application}
+We propose this pipeline for implementing a battery-powered wildlife trail camera that is deployed for extended, unattended periods of time in a forest.  These devices run on small batteries for weeks or months, and every onboard component, including any classifier used to decide whether a trigger is worth recording, must fit within a few kilobytes of flash memory shared with the radio antennas, sensors, and sleep-cycle logic.  A classifier costing $768$ bytes rather than several kilobytes directly extends how long the device can run unattended.
+
+Labeled training data is not available for this particular task.  The motion, vibration, or infrared signal a sensor produces is specific to its installation site, the surrounding foliage, lighting, and typical wildlife at that location.  Building a hand-labeled dataset would mean manually reviewing thousands of recorded trigger events, which is nearly impossible to repeat for every new deployment.
+
+The classes that this device must distinguish are not naturally round.  Realistic animal motion and branch motion produce different, irregular distributions in a feature space, such as motion duration versus motion intensity.  Animal movement and wind noise both trace separate, differently shaped regions.  A method such as k-means, which can only divide the feature space into straight-edged regions around a fixed number of centers, would misclassify motion near the boundary between these irregular shapes far more often than a density-based method that follows their actual contours would. 
+
+\end{document}
