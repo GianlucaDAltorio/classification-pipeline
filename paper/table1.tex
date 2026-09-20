@@ -1,0 +1,15 @@
+\begin{table}[!ht]
+\centering
+\caption{Model footprint by storage format ($K=3$ classes, $G=16$).}
+\label{tab:footprint}
+\begin{tabularx}{\linewidth}{@{}l r r r@{}}
+\toprule
+Storage & Bytes/cell & Per class & All $K$ classes \\
+\midrule
+\texttt{uint8}   & 1 & 256  & 768  \\
+\texttt{uint16}  & 2 & 512  & 1536 \\
+\texttt{float32} & 4 & 1024 & 3072 \\
+\texttt{float64} & 8 & 2048 & 6144 \\
+\bottomrule
+\end{tabularx}
+\end{table}

@@ -23,6 +23,7 @@
 
 % Section 1: Proposed Pipeline.
 \section{Proposed Pipeline}
+\label{sec:pipeline}
 This section describes the part of the pipeline that runs on the implemented device itself.  Everything else, grouping the training data into classes, building a density map for each class, and shrinking those maps down into small byte tables, happens beforehand on a regular computer and is assumed to already be completed.  The device only ever sees the finished byte tables, never the original training data.
 
 Algorithm~\ref{alg:lookup} describes what the device does when it receives a new point to classify.  First, the point is rescaled using the same bounds that were used during training.  That scaled point is then used to figure out which cell of the grid it falls into.  The device reads one stored number from that cell for each class, and picks whichever class has the highest number, unless even the highest number falls below a reject threshold $\tau$ to be trustworthy, in which case the device reports \textsc{unknown} instead of guessing.  This last step matters: without it, the device would confidently name a class in places where it has never actually seen any data. 
@@ -35,6 +36,7 @@ Since this whole process is just a few reads and comparisons, it costs the same 
 
 % Section 2: Application.
 \section{Application}
+\label{sec:application}
 We propose this pipeline for implementing a battery-powered wildlife trail camera that is deployed for extended, unattended periods of time in a forest.  These devices run on small batteries for weeks or months, and every onboard component, including any classifier used to decide whether a trigger is worth recording, must fit within a few kilobytes of flash memory shared with the radio antennas, sensors, and sleep-cycle logic.  A classifier costing $768$ bytes rather than several kilobytes directly extends how long the device can run unattended.
 
 Labeled training data is not available for this particular task.  The motion, vibration, or infrared signal a sensor produces is specific to its installation site, the surrounding foliage, lighting, and typical wildlife at that location.  Building a hand-labeled dataset would mean manually reviewing thousands of recorded trigger events, which is nearly impossible to repeat for every new deployment.
@@ -43,6 +45,7 @@ The classes that this device must distinguish are not naturally round.  Realisti
 
 % Section 3: Method and Setup.
 \section{Method and Setup}
+\label{sec:method}
 The dataset used throughout this work is synthetic, generated with a fixed random seed.  It consists of $1030$ points in two dimensions: two crescent-shaped classes ($209$ and $178$ points), one ring-shaped class ($198$ points), and $33$ scattered background points intended to be discarded as noise.
 
 The dataset was split into training $\left(60\%\right)$, validation $\left(20\%\right)$, and test $\left(20\%\right)$ sets using a fixed random seed.  The training set builds the mode: clustering, density fitting, and the discretized byte tables.  The validation subset is used only to select the density bandwidth.  The test set is used exactly once, at the end, to report an honest measure of performance on data the model never saw.
@@ -52,5 +55,76 @@ Both features were scaled to the range $[0, 1]$ using the minimum and maximum va
 Classes were discovered using DBSCAN with a search radius of $\varepsilon = 0.06$ and a minimum of $8$ points per neighbourhood, applied to the scaled training data.  This recovered three clusters, matching the three shapes in the underlying dataset.  A Gaussian kernel density estimate (KDE) was then fit to each discovered class using $\text{scikit-learn}$'s \texttt{KernelDensity}.  The bandwidth was chosen by testing candidate values $h=\{0.03, 0.04, 0.05, 0.06, 0.08, 0.10, 0.12\}$ and selecting the value that maximised the mean log-likelihood of the held-out validation points.  The algorithm selected $h=0.05$.
 
 Each class' density map was evaluated on a fixed $16\times16$ grid, normalized so its own peak equals $1.0$, and quantized to one byte (\texttt{uint8}) per cell.  This gives a total shipped model size of $768$ bytes for three classes, plus $16$ bytes for the scaling bounds.  At inference, a query point is classified by reading one byte per class from its corresponding grid cell and returning the class with the highest value, unless that value falls below a reject threshold of $\tau=0.12$, in which case the result is \textsc{unknown}.
+
+\section{Evidence}
+\label{sec:evidence}
+The evidence for this pipeline follows the same structure as the data itself: built on the training split, tuned on the validation split, and confirmed on the test split once for the final measurement reported at the end of this section.
+
+\subsection{Classes are discoverable without labels}
+Figure~\ref{fig:clustered} shows the training data clustered in two ways.  DBSCAN recovers all three underlying shapes, two crescents and a ring, correctly labeling the scattered background points as noise.  A k-means clustering given the correct number of classes cannot represent either shape correctly: it slices each crescent through its middle and places a center inside the ring's empty hole, since it can only divide the feature space into straight-edged regions around a fixed number of centers.  This result is the basis for choosing a density-based method over a center-based one.
+
+\begin{figure}[!ht]
+    \centering
+    \includegraphics[width=\columnwidth]{figures/generated/clustered_space.pdf}
+    \caption{DBSCAN discovers three classes from unlabeled training data, while k-means with the correct $k=3$ slices each crescent and struggles to represent the ring.}
+    \label{fig:clustered}
+\end{figure}
+
+\subsection{The density maps are well-formed and survive storage}
+Figure~\ref{fig:continuous} shows the continuous, per-class density maps produced by kernel density estimation on the training data, each normalized so its own peak equals $1.0$.  Figure~\ref{fig:surface} shows the same three maps combined into a single decision surface, with the reject threshold $\tau$ drawn as a plane passing through it: the two crescents form ridges above the plane, and the ring forms a crater whose center dips below it.
+
+\begin{figure}[!ht]
+    \centering
+    \includegraphics[width=\columnwidth]{figures/generated/class_surfaces_continuous.pdf}
+    \caption{Each discovered class's density map, normalized to its own
+    peak, before the lookup grid coarsens it.}
+    \label{fig:continuous}
+\end{figure}
+
+Figure~\ref{fig:discretized} shows the same three maps after being sampled onto the $16\times16$ grid and quantized to one byte per cell, the form that is actually shipped.  The visible difference between figures~\ref{fig:continuous} and~\ref{fig:discretized} is the coarseness of the grid, not the quantization itself.  Rounding each value to one of 256 levels introduces a worst-case error of only $0.196\%$ of each class's peak, far too small to see.
+
+\begin{figure}[!ht]
+    \centering
+    \includegraphics[width=\columnwidth]{figures/generated/class_surfaces_discretized.pdf}
+    \caption{The same three maps as Figure~\ref{fig:continuous}, stored
+    as \texttt{uint8} bytes, the form actually shipped to the device.}
+    \label{fig:discretized}
+\end{figure}
+
+\subsection{What the model costs}
+\label{sec:footprint}
+Table~\ref{tab:footprint} lists the flash cost of storing the maps at several precisions.  Every row holds the same $G\times G$ values per class, only the bytes per cell differ.  Storing the model as \texttt{uint8} costs $768$ bytes for three classes, almost an eight times reduction versus \texttt{float64} at a measured worst-case accuracy cost of $0.196\%$ of peak density.  Section~\ref{sec:testresult} shows never changed a single classification decision on held-out data.
+
+\input{table1}
+
+\subsection{A single query, classified}
+Figure~\ref{fig:decision} shows one held-out test point classified by the stored model: the query falls into a single grid cell, and reading that cell's three stored bytes produces a confident decision for one class, with the other two classes reading zero.  This is a representative example of a query landing well inside a learned region.
+
+\begin{figure}[!ht]
+    \centering
+    \includegraphics[width=\columnwidth]{figures/generated/decision_map.pdf}
+    \caption{One held-out test point classified: its grid cell (left) and the resulting per-class probabilities (right), with the winning class exceeding the reject threshold $\tau$.}
+    \label{fig:decision}
+\end{figure}
+
+\subsection{The reject threshold correctly reports unknown}
+Across the full $16\times16$ grid, $127$ of $256$ cells ($49.6\%$) fall below the reject threshold $\tau = 0.12$, roughly half the feature space is correctly recognized as belonging to no learned class.  Without this threshold, an $\arg\max$ classifier would report a confident-looking label at every one of these locations, including regions no training data ever touched, a failure that would not appear in an accuracy score computed only on points drawn from the three known shapes.
+
+\begin{figure}[!ht]
+    \centering
+    \includegraphics[width=\columnwidth]{figures/generated/total_distribution.pdf}
+    \caption{The combined decision surface: at every location, the
+    largest of the three normalized class densities, with the reject
+    threshold $\tau=0.12$ shown as a plane.}
+    \label{fig:surface}
+\end{figure}
+
+The clearest demonstration of this is the ring's own hollow center, at $(4.8, 1.6)$, a location entirely surrounded by ring training data on every side, yet containing none itself.  Querying this point returns \textsc{unknown}, correctly distinguishing "near data" from "is data" at the exact query location, rather than assuming proximity to a class implies membership in it.
+
+\subsection{Agreement with the model on held-out data}
+\label{sec:testresult}
+The test split, held out from every prior stage, was used exactly once to compare the stored \texttt{uint8} model's decisions against the full-precision continuous KDE's decisions on the same $206$ points.  The two models agreed on $100\%$ of test points, including agreeing on which $6$ points to reject as \textsc{unknown} (Table~\ref{tab:confusion}).  This confirms that the eightfold memory saving from quantization, measured in Section~\ref{sec:footprint}, cost nothing in terms of decisions on data the model never saw during training or tuning.
+
+\input{table2}
 
 \end{document}
