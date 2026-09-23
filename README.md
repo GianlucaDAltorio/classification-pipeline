@@ -1,8 +1,4 @@
 # classification-pipeline
 Repository for Lab 3 in the Project I course.
 
-Completed Part 1, Part 2, Part 3, Part 4:  
-Discovering classes with DBSCAN/K-Means.  
-Building probability maps.  
-Comparing memory sizes for storing the model to a constrained device.  
-Classifying a query point.
+This repository contains all of the necessary source files for this project.  The `src/` folder contains the Python models that were used to generate the plots and figures, `figures/generated` holds all of the generated figures, and `report/` holds the source code and PDF file of the final LaTeX report.
