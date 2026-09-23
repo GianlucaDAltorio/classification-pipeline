@@ -30,8 +30,7 @@ Algorithm~\ref{alg:lookup} describes what the device does when it receives a new
 
 Since this whole process is just a few reads and comparisons, it costs the same amount of work no matter how much data was originally used to build the tables, which is why it's cheap enough to run on a device with very little memory.
 
-% Algorithm reference, ensure to have "Algorithm1_ref.tex" for the 
-% algorithm section to work properly.
+% Algorithm reference.
 \input{Algorithm1_ref}
 
 For this device, nearest-cell lookup (line 5 of Algorithm~\ref{alg:lookup}) is preferred, rather than a bilinear blend of the four surrounding cells.  Nearest-cell costs one byte read per class instead of four, and Section~\ref{sec:evidence} shows the two methods reach the same decision at a tested query point, so the extra cost of bilinear blending is not justified for this dataset.
@@ -56,7 +55,7 @@ Both features were scaled to the range $[0, 1]$ using the minimum and maximum va
 
 Classes were discovered using DBSCAN with a search radius of $\varepsilon = 0.06$ and a minimum of $8$ points per neighborhood, applied to the scaled training split (618 points, $60\%$ of the full dataset).  This recovered three clusters of sizes 209, 178, and 198 points, and labeled 33 points as noise, matching the three underlying shapes.  A Gaussian kernel density estimate (KDE) was then fit to each discovered class using $\text{scikit-learn}$'s \texttt{KernelDensity}.  The bandwidth was chosen by testing candidate values $h=\{0.03, 0.04, 0.05, 0.06, 0.08, 0.10, 0.12\}$ and selecting the value that maximized the mean log-likelihood of the held-out validation points.  The algorithm selected $h=0.05$.
 
-Each class' density map was evaluated on a fixed $16\times16$ grid, normalized so its own peak equals $1.0$, and quantized to one byte (\texttt{uint8}) per cell.  This gives a total shipped model size of $768$ bytes for three classes, plus $16$ bytes for the scaling bounds.  At inference, a query point is classified by reading one byte per class from its corresponding grid cell and returning the class with the highest value, unless that value falls below a reject threshold of $\tau=0.12$, in which case the result is \textsc{unknown}.
+Each class's density map was evaluated on a fixed $16\times16$ grid, normalized so its own peak equals $1.0$, and quantized to one byte (\texttt{uint8}) per cell.  This gives a total shipped model size of $768$ bytes for three classes, plus $16$ bytes for the scaling bounds.  At inference, a query point is classified by reading one byte per class from its corresponding grid cell and returning the class with the highest value, unless that value falls below a reject threshold of $\tau=0.12$, in which case the result is \textsc{unknown}.
 
 % Section 4: Evidence.
 \section{Evidence}
@@ -100,7 +99,7 @@ Testing the bandwidth at its extremes shows the pipeline is sensitive to this ch
     \label{fig:surface}
 \end{figure}
 
-Figure~\ref{fig:discretized} shows the same three maps after being sampled onto the $16\times16$ grid and quantized to one byte per cell, the form that is actually shipped.  The visible difference between figures~\ref{fig:continuous} and~\ref{fig:discretized} is the coarseness of the grid, not the quantization itself.  Rounding each value to one of 256 levels introduces a worst-case error of only $0.196\%$ of each class's peak, far too small to see.
+Figure~\ref{fig:discretized} shows the same three maps after being sampled onto the $16\times16$ grid and quantized to one byte per cell, the form that is actually shipped.  The visible difference between Figures~\ref{fig:continuous} and~\ref{fig:discretized} is the coarseness of the grid, not the quantization itself.  Rounding each value to one of 256 levels introduces a worst-case error of only $0.196\%$ of each class's peak, far too small to see.
 
 \subsection{What the model costs}
 \label{sec:footprint}
@@ -134,8 +133,7 @@ Comparing nearest-cell against bilinear lookup at this same query point shows th
 
 This illustrates how sharply the stored decision can change within a single grid cell, from the peak value of $255$ down to $68$ just one cell away.  Since nearest-cell lookup costs $K$ byte reads, versus bilinear's $4K$, and the two methods agree at this query, nearest-cell lookup is the more economical choice when the two do not disagree.
 
-% Table 1 reference, ensure to have
-% "table1.tex" for Table 1 to work properly.
+% Table 1 reference.
 \input{table1}
 
 \subsection{The reject threshold correctly reports unknown}
@@ -190,8 +188,7 @@ the best choice for a different dataset.
 
 \textbf{The result depends on a reasonable bandwidth.}  Testing the kernel density bandwidth at its extremes (Section~\ref{sec:densitymaps}) showed the pipeline degrades in both directions: too small a bandwidth fragments each class's density map into individual bumps around single data points, while too large a bandwidth merges the ring's hollow center into the surrounding density, defeating the reject mechanism entirely.  The validation-selected value $h=0.05$ avoided both failure modes here, but this value was tuned specifically to this dataset's scale and point density, and is not guaranteed to transfer to a different deployment without repeating the same validation sweep.
 
-% Table 2 reference, ensure to have
-% "table2.tex" for Table 2 to work properly.
+% Table 2 reference.
 \input{table2}
 
 \textbf{What to measure next.}  The most direct way to close these gaps would be to repeat this evaluation on real sensor data from the intended application, with a labeled subset to check the stored model's decisions against true classes rather than only against the continuous model's own output.  A secondary measurement worth taking would be to sweep $\tau$ itself against that same labeled subset, to check whether $0.12$ is actually a reasonable operating point or merely one that happened to work for this synthetic dataset.
