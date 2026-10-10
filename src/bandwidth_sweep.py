@@ -9,7 +9,7 @@ spends the test set once.
 import numpy as np
 from pipeline_common import load_split_scaled, fit_density
 
-SWEEP = [0.03, 0.04, 0.05, 0.06, 0.08, 0.10, 0.12]
+SWEEP = [0.002, 0.005, 0.01, 0.02, 0.03, 0.04, 0.05, 0.06, 0.08, 0.10, 0.12]
 
 data = load_split_scaled()
 Xtr, Xval = data["train"], data["val"]
@@ -26,4 +26,4 @@ for h in SWEEP:
     if ll > best_ll:
         best_h, best_ll = h, ll
     print(f"{h:>6.2f} {ll:>26.3f}")
-print(f"\nvalidation selects h = {best_h:.2f} (highest log-likelihood)")
+print(f"\nvalidation selects h = {best_h:.3f} (highest log-likelihood)")

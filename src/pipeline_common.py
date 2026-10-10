@@ -4,6 +4,7 @@ storage. Defined once here so every stage agrees on all four.
 import numpy as np
 from sklearn.model_selection import train_test_split
 from sklearn.neighbors import KernelDensity
+import pandas as pd
 
 SEED = 20250903
 
@@ -30,26 +31,45 @@ def _arc(rng, cx, cy, r, a0_deg, a1_deg, n, jitter):
     return pts + rng.normal(0.0, jitter, pts.shape)
 
 
-def load_dataset(csv_path=None):
-    """Raw 2-D features: two crescents and a ring, plus uniform noise.
+# Load sensor dataset for Assignment 1.
+def load_dataset(csv_path="data_sensors.csv"):
+    """Real UV+IR readings. Returns (X, y) -- features and true labels separately."""
+    df = pd.read_csv(csv_path)
+    X = df[["uv_sensor", "IR_sensor"]].to_numpy().astype(float)
+    X[:, 1] = np.log1p(X[:, 1])
+    y = df["label"].to_numpy()
+    return X, y
 
-    The shapes are the point. A crescent's centroid sits off the crescent
-    and a ring's sits in its hole, so no centre-based method can describe
-    them -- which is why the pipeline starts with DBSCAN. The three shapes
-    sit at well-separated centres so DBSCAN recovers them at a stable eps
-    even after the 60% training split thins the data.
-    """
-    if csv_path is not None:
-        return np.loadtxt(csv_path, delimiter=",")
 
-    rng = np.random.default_rng(SEED)
-    smile = _arc(rng, 0.0, 0.0, 1.8, 200, 340, 340, 0.11)  # opens upward
-    frown = _arc(rng, 0.0, 3.2, 1.8, 20, 160, 300, 0.11)   # opens downward
-    ring = _arc(rng, 4.8, 1.6, 2.0, 0, 360, 300, 0.11)     # closed loop
+def cluster_names(labels, y):
+    """Map each DBSCAN cluster id to the majority true label inside it."""
+    names = {}
+    for c in sorted(set(labels) - {-1}):
+        vals, counts = np.unique(y[labels == c], return_counts=True)
+        names[c] = str(vals[counts.argmax()])
+    return names
 
-    X = np.vstack([smile, frown, ring])
-    noise = rng.uniform(X.min(axis=0) - 0.4, X.max(axis=0) + 0.4, size=(90, 2))
-    return np.vstack([X, noise])
+
+# def load_dataset(csv_path=None):
+#     """Raw 2-D features: two crescents and a ring, plus uniform noise.
+#
+#     The shapes are the point. A crescent's centroid sits off the crescent
+#     and a ring's sits in its hole, so no centre-based method can describe
+#     them -- which is why the pipeline starts with DBSCAN. The three shapes
+#     sit at well-separated centres so DBSCAN recovers them at a stable eps
+#     even after the 60% training split thins the data.
+#     """
+#     if csv_path is not None:
+#         return np.loadtxt(csv_path, delimiter=",")
+#
+#     rng = np.random.default_rng(SEED)
+#     smile = _arc(rng, 0.0, 0.0, 1.8, 200, 340, 340, 0.11)  # opens upward
+#     frown = _arc(rng, 0.0, 3.2, 1.8, 20, 160, 300, 0.11)   # opens downward
+#     ring = _arc(rng, 4.8, 1.6, 2.0, 0, 360, 300, 0.11)     # closed loop
+#
+#     X = np.vstack([smile, frown, ring])
+#     noise = rng.uniform(X.min(axis=0) - 0.4, X.max(axis=0) + 0.4, size=(90, 2))
+#     return np.vstack([X, noise])
 
 
 def scale_features(X, bounds=None):
@@ -62,31 +82,57 @@ def scale_features(X, bounds=None):
     return (X - lo) / (hi - lo), (lo, hi)
 
 
-def split_data(X, seed=SEED):
-    """Split raw points into (train, val, test), 60/20/20, fixed seed.
+# Updated data split for Assignment 1.
+def split_data(X, y, seed=SEED):
+    """Split raw points + labels into (train, val, test), 60/20/20, fixed seed."""
+    X_train, X_rest, y_train, y_rest = train_test_split(
+        X, y, train_size=TRAIN_FRAC, random_state=seed, stratify=y)
+    X_val, X_test, y_val, y_test = train_test_split(
+        X_rest, y_rest, test_size=0.5, random_state=seed, stratify=y_rest)
+    return (X_train, y_train), (X_val, y_val), (X_test, y_test)
 
-    Reproducible because the seed is fixed: anyone re-running gets the same
-    three subsets, which is what makes the reported test number checkable.
-    """
-    train, rest = train_test_split(X, train_size=TRAIN_FRAC, random_state=seed)
-    val, test = train_test_split(rest, test_size=0.5, random_state=seed)
-    return train, val, test
+
+# def split_data(X, seed=SEED):
+#     """Split raw points into (train, val, test), 60/20/20, fixed seed.
+#
+#     Reproducible because the seed is fixed: anyone re-running gets the same
+#     three subsets, which is what makes the reported test number checkable.
+#     """
+#     train, rest = train_test_split(X, train_size=TRAIN_FRAC, random_state=seed)
+#     val, test = train_test_split(rest, test_size=0.5, random_state=seed)
+#     return train, val, test
 
 
+# Load scaled dataset for Assignment 1.
 def load_split_scaled(seed=SEED):
-    """Load raw points, split, and scale every subset by TRAIN's bounds.
+    """Load raw points, split, and scale every subset by TRAIN's bounds."""
+    X, y = load_dataset()
+    (X_train, y_train), (X_val, y_val), (X_test, y_test) = split_data(X, y, seed)
+    train_s, bounds = scale_features(X_train)
+    val_s, _ = scale_features(X_val, bounds)
+    test_s, _ = scale_features(X_test, bounds)
+    return {
+        "train": train_s, "y_train": y_train,
+        "val": val_s, "y_val": y_val,
+        "test": test_s, "y_test": y_test,
+        "bounds": bounds,
+    }
 
-    The bounds come from training data alone -- they ship with the model,
-    so validation and test points are scaled by them, not by their own
-    range. Held-out points may therefore land slightly outside [0, 1];
-    that is honest, and the grid lookup clips them into the edge cells.
-    Returns a dict: scaled train/val/test arrays plus the shared bounds.
-    """
-    train, val, test = split_data(load_dataset(), seed)
-    train_s, bounds = scale_features(train)
-    val_s, _ = scale_features(val, bounds)
-    test_s, _ = scale_features(test, bounds)
-    return {"train": train_s, "val": val_s, "test": test_s, "bounds": bounds}
+
+# def load_split_scaled(seed=SEED):
+#     """Load raw points, split, and scale every subset by TRAIN's bounds.
+#
+#     The bounds come from training data alone -- they ship with the model,
+#     so validation and test points are scaled by them, not by their own
+#     range. Held-out points may therefore land slightly outside [0, 1];
+#     that is honest, and the grid lookup clips them into the edge cells.
+#     Returns a dict: scaled train/val/test arrays plus the shared bounds.
+#     """
+#     train, val, test = split_data(load_dataset(), seed)
+#     train_s, bounds = scale_features(train)
+#     val_s, _ = scale_features(val, bounds)
+#     test_s, _ = scale_features(test, bounds)
+#     return {"train": train_s, "val": val_s, "test": test_s, "bounds": bounds}
 
 
 def make_grid():
