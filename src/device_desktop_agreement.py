@@ -33,7 +33,7 @@ class Tee:
         self.stdout.flush()
         self.file.flush()
 
-sys.stdout = Tee("replay_results.txt")
+sys.stdout = Tee("device_desktop_agreement.txt")
 data = pc.load_split_scaled()
 lo, hi = data["bounds"]
 labels = np.loadtxt("labels.csv", dtype=int)

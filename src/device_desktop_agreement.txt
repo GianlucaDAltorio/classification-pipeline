@@ -1,0 +1,8 @@
+LED: n=581  device-vs-python agreement 100.0%  correct vs truth 100.0%  UNKNOWN 0.0%
+  disagreements: none
+fluorescent: n=581  device-vs-python agreement 100.0%  correct vs truth 100.0%  UNKNOWN 0.0%
+  disagreements: none
+shade: n=581  device-vs-python agreement 100.0%  correct vs truth 100.0%  UNKNOWN 0.0%
+  disagreements: none
+sun: n=581  device-vs-python agreement 100.0%  correct vs truth 0.0%  UNKNOWN 100.0%
+  disagreements: none
