@@ -132,7 +132,7 @@ Figure~\ref{fig:filter} plots the raw and filtered IR signal for the LED and flu
 A reading with a filtered IR value in the middle of a class band lands in a single grid cell, and reading that cell's four stored bytes gives one clear winner. The reject mechanism is shown by overcast sunlight, which was not part of the training data. Its readings fall in a cell where all four bytes are zero, so the device reports UNKNOWN instead of choosing the nearest class. This is the behavior the threshold is for: ``near data'' is not ``is data''.
 
 \subsection{On-Device Versus Desktop Agreement}
-A fresh batch of 581 samples per class (2\,324 in total) was logged from the running device on October 12, five days after the training recordings, at the same location, and replayed through the desktop Python model using the same scaling and tables. The device and the desktop model disagreed on none of the 2\,324 samples, which confirms that the on-device arithmetic (single-precision \texttt{log1pf}, scaling and indexing) reproduces the desktop decisions.
+After discarding the first 20 samples of each run while the filter settles, a fresh batch of 581 samples per class (2\,324 in total) was logged from the running device on October 12, five days after the training recordings, at the same location, and replayed through the desktop Python model using the same scaling and tables. The device and the desktop model disagreed on none of the 2\,324 samples, which confirms that the on-device arithmetic (single-precision \texttt{log1pf}, scaling and indexing) reproduces the desktop decisions.
 
 \input{table2}
 
