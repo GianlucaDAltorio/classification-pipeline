@@ -11,7 +11,7 @@
 \algrenewcommand{\algorithmicensure}{\textbf{Output:}}
 
 % Title creation and placement.
-\title{Density-Based Classification From Unlabeled Data for Memory-Constrained Devices}
+\title{Density-Based Classification of Lighting Conditions\\ on a Memory-Constrained ESP32:\\ A Proof of Concept}
 \author{
     \IEEEauthorblockN{Gianluca D'Altorio}
     \IEEEauthorblockA{Department of Computer Engineering Technology\\
@@ -24,173 +24,145 @@
 % Section 1: Proposed Pipeline.
 \section{Proposed Pipeline}
 \label{sec:pipeline}
-This section describes the part of the pipeline that runs on the implemented device itself.  Everything else, grouping the training data into classes, building a density map for each class, and shrinking those maps down into small byte tables, happens beforehand on a regular computer and is assumed to already be completed.  The device only ever sees the finished byte tables, never the original training data.
+This section describes the part of the pipeline that runs on the device itself.  Everything else, grouping the training data into classes, building a density map for each class, and shrinking those maps into small byte tables, happens beforehand on a regular computer. The device only ever sees the finished byte tables, never the original training data.
 
-Algorithm~\ref{alg:lookup} describes what the device does when it receives a new point to classify.  First, the point is rescaled using the same bounds that were used during training.  That scaled point is then used to figure out which cell of the grid it falls into.  The device reads one stored number from that cell for each class, and picks whichever class has the highest number, unless even the highest number falls below a reject threshold $\tau$ to be trustworthy, in which case the device reports \textsc{unknown} instead of guessing.  This last step matters: without it, the device would confidently name a class in places where it has never actually seen any data. 
+Algorithm~\ref{alg:classify} describes what the device does when it receives a new point. First, the point is rescaled with the same bounds used during training (for the IR channel, after the same $\log(1+x)$ transform used in training, see Section~\ref{sec:method}). The scaled point selects one cell of the grid. The device reads one stored byte from that cell for each class and picks the class with the highest value, unless even that value falls below a reject threshold $\tau$, in which case it reports UNKNOWN instead of guessing. Without this last step the device would confidently name a class in places where it has never seen any data.
 
-Since this whole process is just a few reads and comparisons, it costs the same amount of work no matter how much data was originally used to build the tables, which is why it's cheap enough to run on a device with very little memory.
+Since the whole process is a few reads and comparisons, its cost does not depend on how much data was used to build the tables. Nearest cell lookup (line 5 of Algorithm~\ref{alg:classify}) is used rather than a bilinear blend of the four surrounding cells: it costs one byte read per class instead of four, and on this dataset the classes are separated widely enough that the extra smoothness is not needed.
 
 % Algorithm reference.
 \input{Algorithm1_ref}
 
-For this device, nearest-cell lookup (line 5 of Algorithm~\ref{alg:lookup}) is preferred, rather than a bilinear blend of the four surrounding cells.  Nearest-cell costs one byte read per class instead of four, and Section~\ref{sec:evidence} shows the two methods reach the same decision at a tested query point, so the extra cost of bilinear blending is not justified for this dataset.
-
 % Section 2: Application.
 \section{Application}
 \label{sec:application}
-An example of this pipeline is implementation in a battery-powered wildlife trail camera that is deployed for extended, unattended periods of time in a forest.  These devices run on small batteries for weeks or months, and every onboard component, including any classifier used to decide whether a trigger is worth recording, must fit within a few kilobytes of flash memory shared with the radio antennas, sensors, and sleep-cycle logic.  A classifier costing $768$ bytes rather than several kilobytes directly extends how long the device can run unattended.
+The application is an ESP32 that must recognize the lighting condition it is in, using two sensors: a UV sensor and an IR channel. Such a device has a few kilobytes of flash to spare next to its radio and sleep logic, so a classifier that costs about one kilobyte, rather than a neural network or a library of several kilobytes, directly leaves room for the rest of the firmware.
 
-Labeled training data is not available for this particular task.  The motion, vibration, or infrared signal a sensor produces is specific to its installation site, the surrounding foliage, lighting, and typical wildlife at that location.  Building a hand-labeled dataset would mean manually reviewing thousands of recorded trigger events, which is nearly impossible to repeat for every new deployment.
+Labeled data is cheap to collect in this particular case, which lets us check the pipeline against ground truth, but the pipeline itself never uses the labels: classes are discovered by clustering. This matters because the shapes in a sensor feature space are not round or evenly spaced. In our data each indoor class is a thin streak along the IR axis (indoor UV reads exactly zero), and sunlight sits far away from all of them, so a center-based method such as k-means would have to place centers on streaks of very different lengths. A density-based method follows the actual shape of each class.
 
-The classes that this device must distinguish are not naturally round.  Realistic animal motion and branch motion produce different, irregular distributions in a feature space, such as motion duration versus motion intensity.  Animal movement and wind noise both trace separate, differently shaped regions.  A method such as k-means, which can only divide the feature space into straight-edged regions around a fixed number of centers, would misclassify motion near the boundary between these irregular shapes far more often than a density-based method that follows their actual contours would. 
+\subsection{Proof of Concept}
+\label{sec:poc}
+Figure~\ref{fig:photo} shows the working prototype: an ESP32 development board with a GUVA-S12SD analog UV sensor on GPIO34 and a TSL2591 light sensor on I$^2$C (SDA on pin 21, SCL on pin 22), of which only the infrared channel is used. The device classifies live and prints the predicted class over serial. A short video of the device switching between sample conditions has been attached to the assignment submission.
+
+\begin{figure}[!ht]
+  \centering
+  \includegraphics[width=\columnwidth]{figures/generated/PoC.png}
+  \caption{The proof-of-concept board: ESP32, GUVA-S12SD UV sensor and TSL2591
+  IR sensor.}
+  \label{fig:photo}
+\end{figure}
 
 % Section 3: Method and Setup.
 \section{Method and Setup}
 \label{sec:method}
-The dataset used throughout this work is synthetic, generated with a fixed random seed.  It consists of $1030$ points in two dimensions: two crescent-shaped classes ($340$ and $300$ points), one ring-shaped class ($300$ points), and $90$ scattered background points intended to be discarded as noise.
+\subsection{Hardware and Data Collection}
+The UV signal comes from a GUVA-S12SD read on the ESP32's 12-bit ADC (0--4095). The IR signal comes from the TSL2591's IR channel over I$^2$C (16-bit counts, medium gain, 100\,ms integration time). Both channels are smoothed on the device with an exponential moving average, $y_t = \alpha x_t + (1-\alpha)\,y_{t-1}$ with $\alpha = 0.2$.  This gives a time constant of about 0.55 s at the effective rate of about 8.2 Hz (one sample per 122 ms).
 
-The dataset was split into training $\left(60\%\right)$, validation $\left(20\%\right)$, and test $\left(20\%\right)$ sets using a fixed random seed.  The training set builds the model: clustering, density fitting, and the discretized byte tables.  The validation subset is used only to select the density bandwidth.  The test set is used exactly once, at the end, to report an honest measure of performance on data the model never saw.
+Four lighting conditions were recorded, one labeled CSV each: LED, fluorescent, shade and sun, with 360 samples per class (1\,440 in total), recorded on October 7, with columns \texttt{uv\_sensor}, \texttt{IR\_sensor} and \texttt{label}. The labels are used only to evaluate the model, never to build it.
 
-Both features were scaled to the range $[0, 1]$ using the minimum and maximum values of the training subset alone.  The same bounds are then applied to the validation and test sets, and would be shipped alongside the model to a real device.
+\subsection{Preprocessing and Splits}
+Indoor UV is exactly zero, while IR counts span more than two orders of magnitude (130--390 indoors, about 28\,000 in sunlight). Scaling the raw IR to $[0,1]$ would squeeze all three indoor classes into a sliver, so IR is transformed with $\log(1+x)$ before scaling. Both features are then scaled to $[0,1]$ using the minimum and maximum of the training split alone, and the same bounds are shipped to the device. The data was split 60/20/20 into training, validation and test sets, stratified by label, with a fixed random seed. Since the samples are consecutive readings of a smoothed signal, neighboring samples are near-duplicates, so these random splits are optimistic; the separately recorded batches described in Section~\ref{sec:evidence} are the real test.
 
-Classes were discovered using DBSCAN with a search radius of $\varepsilon = 0.06$ and a minimum of $8$ points per neighborhood, applied to the scaled training split (618 points, $60\%$ of the full dataset).  This recovered three clusters of sizes 209, 178, and 198 points, and labeled 33 points as noise, matching the three underlying shapes.  A Gaussian kernel density estimate (KDE) was then fit to each discovered class using $\text{scikit-learn}$'s \texttt{KernelDensity}.  The bandwidth was chosen by testing candidate values $h=\{0.03, 0.04, 0.05, 0.06, 0.08, 0.10, 0.12\}$ and selecting the value that maximized the mean log-likelihood of the held-out validation points.  The algorithm selected $h=0.05$.
+\subsection{Model Construction}
+Classes were discovered with DBSCAN on the scaled data with $\varepsilon = 0.02$ and a minimum of 8 points per neighborhood. This gave four clusters of 360 points each and no noise points. $\varepsilon = 0.06$ gave the same four clusters, so the result is not sensitive to the exact value in that range and the smaller, tighter $\varepsilon = 0.02$ was kept; $\varepsilon = 0.30$ merged the three indoor classes into one cluster of 1\,080 points.  Conversely, a radius that is too small fragments classes: $\varepsilon = 0.005$ produced six clusters and seven noise points, with three classes intact (360 points each) but the fourth split into clusters of 306, 27 and 20 points. At that radius the neighborhoods no longer overlap enough to connect every point of a class, so sparser stretches of the same class break off as separate clusters or noise.  A Gaussian kernel density estimate was fitted to each cluster, peak-normalized to 1.0, evaluated on a $G \times G$ grid and quantized to one byte per cell. The reject threshold is $\tau = 0.12$.
 
-Each class's density map was evaluated on a fixed $16\times16$ grid, normalized so its own peak equals $1.0$, and quantized to one byte (\texttt{uint8}) per cell.  This gives a total shipped model size of $768$ bytes for three classes, plus $16$ bytes for the scaling bounds.  At inference, a query point is classified by reading one byte per class from its corresponding grid cell and returning the class with the highest value, unless that value falls below a reject threshold of $\tau=0.12$, in which case the result is \textsc{unknown}.
+The bandwidth $h$ and grid size $G$ were chosen by an end-to-end sweep on the validation split: for each pair, the stored byte tables were built and used to classify the validation points, and the fraction classified correctly and the fraction wrongly rejected were recorded. Choosing $h$ by held-out log-likelihood, as in the earlier synthetic experiment, failed on this data: it always picked the smallest $h$ because the UV axis has zero variance and near-duplicate neighbors leak across the split. With $G = 16$, every $h \geq 0.015$ gave 100\% correct and 0\% rejected, while smaller values wrongly rejected 0.2--0.8\% of points.  Both $h = 0.02$ and $G = 16$ were frozen.
+
+\subsection{Deployment and Measurement}
+A generator script writes \texttt{model.h} containing the four $16\times16$ byte tables (1\,024 bytes in flash), the scaling bounds (16 bytes), the class names and $\tau$. The firmware reads the sensors, applies the same smoothing filter and $\log(1+x)$, scales, indexes the tables and prints \texttt{idx, uv, ir, row, col, class, latency\_us} over serial.
+
+Cost was measured by differencing. A copy of the firmware in which the classifier does not read the table (it uses a constant instead) was compiled alongside the full firmware, and the compiler's reported program size and global-variable size were subtracted. Lookup latency was timed with \texttt{micros()} around the classification call.
 
 % Section 4: Evidence.
 \section{Evidence}
 \label{sec:evidence}
-The evidence for this pipeline follows the same structure as the data itself: built on the training split, tuned on the validation split, and confirmed on the test split once for the final measurement reported at the end of this section.
+The evidence follows the structure of the data: the model is built on the training split, tuned on validation, and then compared with ground truth, with the desktop model, and with the real hardware.
 
-\subsection{Classes are discoverable without labels}
-\label{sec:labels}
-Figure~\ref{fig:clustered} shows the training data clustered in two ways.  DBSCAN recovers all three underlying shapes, two crescents and a ring, correctly labeling the scattered background points as noise.  A k-means clustering given the correct number of classes cannot represent either shape correctly: it slices each crescent through its middle and places a center inside the ring's empty hole, since it can only divide the feature space into straight-edged regions around a fixed number of centers.  This result is the basis for choosing a density-based method over a center-based one.
+\subsection{Classes are Discoverable Without Labels}
+Table~\ref{tab:confusion} compares DBSCAN's clusters with the ground-truth labels. Each cluster is named by the majority label of its members.  DBSCAN recovered all four lighting conditions: every one of the 1,440 samples fell in the cluster matching its label, with no noise points, without ever seeing the labels.  This is a clean result partly because the classes are well separated in this feature space; it does not show that clustering would stay this clean on conditions that overlap. Figure~\ref{fig:dbscan} shows the clusters.
 
-% Figure 1.
-\begin{figure}[!ht]
-    \centering
-    \includegraphics[width=\columnwidth]{figures/generated/clustered_space.pdf}
-    \caption{DBSCAN discovers three classes from unlabeled training data, while k-means with the correct $k=3$ slices each crescent and struggles to represent the ring.}
-    \label{fig:clustered}
-\end{figure}
-
-\subsection{The density maps are well-formed and survive storage}
-\label{sec:densitymaps}
-Figure~\ref{fig:continuous} shows the continuous, per-class density maps produced by kernel density estimation on the training data, each normalized so its own peak equals $1.0$.  Figure~\ref{fig:surface} shows the same three maps combined into a single decision surface, with the reject threshold $\tau$ drawn as a plane passing through it: the two crescents form ridges above the plane, and the ring forms a crater whose center dips below it.
-
-Testing the bandwidth at its extremes shows the pipeline is sensitive to this choice.  At $h=0.03$, each class's density map fragments into individual bumps around single training points rather than forming a smooth shape.  At $h=0.12$, the opposite failure occurs, as shown in Figure~\ref{fig:continuous_largest}: the ring's hollow center fills in with non-zero density as neighboring bumps merge, which would defeat the reject mechanism entirely for that region.  The validation-selected value $h=0.05$ avoids both failure modes.
-
-% Figure 2.
-\begin{figure}[!ht]
-    \centering
-    \includegraphics[width=\columnwidth]{figures/generated/class_surfaces_continuous.pdf}
-    \caption{Each discovered class's density map, normalized to its own
-    peak, before the lookup grid coarsens it.}
-    \label{fig:continuous}
-\end{figure}
-
-% Figure 3.
-\begin{figure}[!ht]
-    \centering
-    \includegraphics[width=\columnwidth]{figures/generated/total_distribution.pdf}
-    \caption{The combined decision surface: at every location, the
-    largest of the three normalized class densities, with the reject
-    threshold $\tau=0.12$ shown as a plane.}
-    \label{fig:surface}
-\end{figure}
-
-Figure~\ref{fig:discretized} shows the same three maps after being sampled onto the $16\times16$ grid and quantized to one byte per cell, the form that is actually shipped.  The visible difference between Figures~\ref{fig:continuous} and~\ref{fig:discretized} is the coarseness of the grid, not the quantization itself.  Rounding each value to one of 256 levels introduces a worst-case error of only $0.196\%$ of each class's peak, far too small to see.
-
-\subsection{What the model costs}
-\label{sec:footprint}
-Table~\ref{tab:footprint} lists the flash cost of storing the maps at several precisions.  Every row holds the same $G\times G$ values per class, only the bytes per cell differ.  Storing the model as \texttt{uint8} costs $768$ bytes for three classes, an eight times reduction versus \texttt{float64} at a measured worst-case accuracy cost of $0.196\%$ of peak density.  Section~\ref{sec:testresult} shows that this cost never changed a single classification decision on held-out data.
-
-Doubling the grid size to $G=32$ was also tested.  This quadruples the footprint to $3072$ bytes for three classes, while only doubling the grid's linear resolution, since flash cost scales with $G^2$ while spatial detail scales with $G$.  The ring's hollow center is visibly better resolved at this finer resolution, as shown in Figure~\ref{fig:discretized_32}, but the memory cost to achieve it grows much faster than the resolution improvement buys. 
-
-\subsection{A single query, classified}
-Figure~\ref{fig:decision} shows one held-out test point classified by the stored model: the query falls into a single grid cell, and reading that cell's three stored bytes produces a confident decision for one class, with the other two classes reading zero.  This is a representative example of a query landing well inside a learned region.
-
-% Figure 4.
-\begin{figure}[!ht]
-    \centering
-    \includegraphics[width=\columnwidth]{figures/generated/class_surfaces_continuous_largest.pdf}
-    \caption{Each discovered class's density map at $h=0.12$, the largest
-    bandwidth tested. Neighboring bumps merge and the ring's hollow
-    center fills in with non-zero density, which would defeat the reject
-    mechanism.}
-    \label{fig:continuous_largest}
-\end{figure}
-
-Comparing nearest-cell against bilinear lookup at this same query point shows the two methods agree. Nearest-cell reads three bytes directly from the query's cell, $(0, 255, 0)$, while bilinear blends the four surrounding cells to read $(0, 221.8, 0)$: a softer but still unambiguous decision for class $1$. The stored bytes in the $3\times3$ neighborhood around this cell, for class $1$, are:
-
-\[
-\begin{pmatrix}
-187 & 164 & 76 \\
-208 & 255 & 183 \\
-68  & 159 & 222
-\end{pmatrix}
-\]
-
-This illustrates how sharply the stored decision can change within a single grid cell, from the peak value of $255$ down to $68$ just one cell away.  Since nearest-cell lookup costs $K$ byte reads, versus bilinear's $4K$, and the two methods agree at this query, nearest-cell lookup is the more economical choice when the two do not disagree.
-
-% Table 1 reference.
 \input{table1}
 
-\subsection{The reject threshold correctly reports unknown}
-Across the full $16\times16$ grid, $127$ of $256$ cells ($49.6\%$) fall below the reject threshold $\tau = 0.12$, roughly half the feature space is correctly recognized as belonging to no learned class.  Without this threshold, an $\arg\max$ classifier would report a confident-looking label at every one of these locations, including regions no training data ever touched, a failure that would not appear in an accuracy score computed only on points drawn from the three known shapes.
-
-The clearest demonstration of this is the ring's own hollow center, at $(4.8, 1.6)$, a location entirely surrounded by ring training data on every side, yet containing none itself.  Querying this point returns \textsc{unknown}, correctly distinguishing "near data" from "is data" at the exact query location, rather than assuming proximity to a class implies membership in it.
-
-% Figure 5.
 \begin{figure}[!ht]
-    \centering
-    \includegraphics[width=\columnwidth]{figures/generated/class_surfaces_discretized.pdf}
-    \caption{The same three maps as Figure~\ref{fig:continuous}, stored
-    as \texttt{uint8} bytes, the form actually shipped to the device.}
-    \label{fig:discretized}
+  \centering
+  \includegraphics[width=\columnwidth]{figures/generated/clustered_space.pdf}
+  \caption{DBSCAN recovers the four lighting conditions from unlabeled data
+  (scaled UV and log-scaled IR). Clusters are named by their majority ground-truth label.}
+  \label{fig:dbscan}
 \end{figure}
 
-\subsection{Agreement with the model on held-out data}
-\label{sec:testresult}
-The test split, held out from every prior stage, was used exactly once to compare the stored \texttt{uint8} model's decisions against the full-precision continuous KDE's decisions on the same $206$ points.  The two models agreed on $100\%$ of test points, including agreeing on which $6$ points to reject as \textsc{unknown} (Table~\ref{tab:confusion}).  This confirms that the eightfold memory saving from quantization, measured in Section~\ref{sec:footprint}, cost nothing in terms of decisions on data the model never saw during training or tuning.
+\subsection{The Density Maps are Well-Formed and Survive Storage}
+Figure~\ref{fig:kde} shows the per-class density maps and Figure~\ref{fig:surface} the combined decision surface with the reject threshold. Figure~\ref{fig:stored} shows the same maps stored as one byte per cell on the $16\times16$ grid. Quantizing each value to one of 256 levels added a measured worst-case error of 0.177\% of a class's peak, within the theoretical bound of 0.196\%. The three indoor classes occupy adjacent bands along the IR axis. These bands follow from the scaling bounds stored in \texttt{model.h} and the 16-row grid: the log-scaled IR range (4.885 to 10.370) is divided into 16 equal rows, and converting the row edges back to counts gives boundaries near 185, 262 and 520. Reading the non-zero cells of the stored tables, shade covers row 0 (IR below about 185 counts), LED row 1 (about 185--262) and fluorescent rows 2--3 (about 262--520). The classes are therefore brightness bands rather than source types, which matters for the limitations in Section~\ref{sec:limitations}.
+
+\begin{figure}[!ht]
+  \centering
+  \includegraphics[width=\columnwidth]{figures/generated/class_surfaces_continuous.pdf}
+  \caption{Per-class density maps from kernel density estimation ($h = 0.02$), each
+  normalized to its own peak.}
+  \label{fig:kde}
+\end{figure}
+
+\subsection{What the Model Costs: Predicted}
+Table~\ref{tab:footprint} lists the flash cost of storing the maps at several precisions for $K = 4$ classes and $G = 16$. Storing as \texttt{uint8} predicts 1\,024 bytes of tables plus 16 bytes of bounds, an eightfold reduction versus float64.
+
+\begin{figure}[!ht]
+  \centering
+  \includegraphics[width=\columnwidth]{figures/generated/total_distribution.pdf}
+  \caption{Combined decision surface: at every location the largest of the four
+  normalized class densities, with the reject threshold $\tau = 0.12$.}
+  \label{fig:surface}
+\end{figure}
+
+\subsection{Filtering}
+Figure~\ref{fig:filter} plots the raw and filtered IR signal for the LED and fluorescent classes, with the class boundaries drawn. Both signals contain brief, sharp downward glitches, four in each plot, where the raw reading drops to between roughly 40 and 130 counts for a sample or two. Unfiltered, every one of these would cross a class boundary: an LED or fluorescent glitch would read as shade. The exponential moving average shrinks them. In the fluorescent recording all four filtered dips stay above the LED boundary (about 262 counts), so no glitch changes the class. In the LED recording three of four stay inside the LED band, but the largest dips to about 155 counts, below the shade boundary (about 185), so the filter reduces but does not remove misclassification. The price of the filter is lag: a step change takes about 1.4\,s to settle (about 2.5 time constants).
+
+\begin{figure}[!ht]
+  \centering
+  \includegraphics[width=\columnwidth]{figures/generated/class_surfaces_discretized.pdf}
+  \caption{The same four maps stored as \texttt{uint8} on the $16\times16$ grid.}
+  \label{fig:stored}
+\end{figure}
+
+\subsection{A Query Classified, and a Query Rejected} 
+A reading with a filtered IR value in the middle of a class band lands in a single grid cell, and reading that cell's four stored bytes gives one clear winner. The reject mechanism is shown by overcast sunlight, which was not part of the training data. Its readings fall in a cell where all four bytes are zero, so the device reports UNKNOWN instead of choosing the nearest class. This is the behavior the threshold is for: ``near data'' is not ``is data''.
+
+\subsection{On-Device Versus Desktop Agreement}
+A fresh batch of 581 samples per class (2\,324 in total) was logged from the running device on October 12, five days after the training recordings, at the same location, and replayed through the desktop Python model using the same scaling and tables. The device and the desktop model disagreed on none of the 2\,324 samples, which confirms that the on-device arithmetic (single-precision \texttt{log1pf}, scaling and indexing) reproduces the desktop decisions.
+
+\input{table2}
+
+Against ground truth (Table~\ref{tab:heldout}), LED, fluorescent and shade were each classified correctly on 100\% of their 581 samples. Sun was classified correctly on 0\%: all 581 samples were UNKNOWN, because this batch was recorded in overcast conditions that differ from the clear-sun training data. The device and desktop agreed on this too, so this is a property of the model, not a porting error. It is discussed in Section~\ref{sec:limitations}.
+
+\subsection{Measured Versus Predicted Cost}
+Table~\ref{tab:cost} compares prediction and measurement. Flash grew by 1\,060 bytes (289\,133 bytes with the table lookup versus 288\,073 bytes without it), against 1\,024 predicted for the tables alone. The extra 36 bytes are the other things the model brings with it that the prediction did not count: the 16 bytes of scaling bounds, and the class names, threshold and lookup code (about 20 bytes). Global variables (SRAM) were identical, 21\,944 bytes in both builds, so the tables add no SRAM because they stay in flash. Lookup latency was 4--8\,\textmu s, negligible next to the 122\,ms sample period.
+
+\begin{figure}[!ht]
+  \centering
+  \includegraphics[width=\columnwidth]{figures/generated/raw_vs_filtered.pdf}
+  \caption{Raw and filtered IR for LED and fluorescent lighting, with class boundaries.}
+  \label{fig:filter}
+\end{figure}
 
 % Section 5: Limitations and Remaining Uncertainty.
 \section{Limitations and Remaining Uncertainty}
 \label{sec:limitations}
-The evidence in Section~\ref{sec:evidence} supports adopting this pipeline for the application described in Section~\ref{sec:application}, but several limitations bound how far that evidence can be trusted.
 
-\textbf{A single synthetic dataset.}  Every result in this paper comes from one two-dimensional, synthetically generated dataset with a fixed random seed.  The pipeline has not been tested on real sensor data, on data with more than two features, or on class shapes other than the crescents and ring used here.  A deployment on real wildlife-sensor data would need to repeat this evaluation on the actual sensor's feature space before any of these results could be assumed to transfer.
+The evidence supports the pipeline for the four conditions tested, but several limits bound how far it can be trusted.
 
-% Figure 6.
-\begin{figure}[!ht]
-    \centering
-    \includegraphics[width=\columnwidth]{figures/generated/class_surfaces_discretized_32.pdf}
-    \caption{The same \texttt{uint8} map stored as $G^2$ instead of $G$.
-    The resolution improves, but memory cost increases.}
-    \label{fig:discretized_32}
-\end{figure}
+\textbf{Conditions outside the training data are rejected, not recognized.} The fresh sun batch was overcast, unlike the clear-sun training data, and was reported as UNKNOWN on every sample (100\%). This is the reject mechanism working, but it also shows the tables are sparse: any in-between condition lands in an empty cell. Covering this would require adding an overcast class and retraining with a new held-out batch, which was not within the scope of this particular experiment.
 
-\textbf{The reject threshold was chosen, not derived.}  The value $\tau=0.12$ was fixed as a constant in the pipeline rather than produced by any formal optimization or statistical procedure.  It was observed to correctly reject the ring's hollow center and roughly half of the full grid ($49.6\%$ of cells), but this behavior is specific to this dataset's class shapes and this particular threshold value.  A different application, or a different $\tau$, could shift the
-reject region substantially, and there is no guarantee that $0.12$ is
-the best choice for a different dataset.
+\textbf{The classes are brightness bands, not source types.} Shade, LED and fluorescent differ mainly in IR level, so distance and position matter as much as the source. Light through blinds was classified as LED, and covering the IR sensor, which gives IR below the training minimum, was clipped to the edge row and classified as shade. The fluorescent level also drifted by over 100 counts between recordings and sat barely above the LED boundary (minimum 261.65 against a boundary at 261.63), so a small shift would change its class.
 
-% Figure 7.
-\begin{figure}[!ht]
-    \centering
-    \includegraphics[width=\columnwidth]{figures/generated/decision_map.pdf}
-    \caption{One held-out test point classified: its grid cell (left) and the resulting per-class probabilities (right), with the winning class exceeding the reject threshold $\tau$.}
-    \label{fig:decision}
-\end{figure}
+\input{table3}
 
-\textbf{The test set result is an agreement, not accuracy.}  Since DBSCAN invented the class labels in Section~\ref{sec:labels}, no independent ground truth exists for this dataset.  The $100\%$ figure reported in Section~\ref{sec:testresult} measures whether the cheap, stored model reproduces the decisions of the expensive, continuous model, not whether either model's decisions are objectively correct.  It is possible for both models to agree while both are wrong about the true underlying classes, if DBSCAN's original clustering itself was flawed.
+\textbf{Filter lag and glitches.} The exponential moving average needs about 1.4\,s to follow a step change. An isolated LED glitch crossed into the shade band even after filtering.
 
-\textbf{Grid resolution grows expensive quite quickly.}  Section~\ref{sec:evidence} showed that doubling the grid size from $16$ to $32$ quadrupled the flash footprint (from $768$ to $3072$ bytes) while only doubling the linear spatial resolution, since footprint scales with $G^2$ while detail scales with $G$. An application whose classes are finer-grained or more numerous than this one would hit its flash budget far sooner than this dataset suggests.
+\textbf{Optimistic validation.} Consecutive readings are near-duplicates, so random splits of one recording overstate accuracy and likelihood-based tuning failed (Section~\ref{sec:method}). The 100\% figures on validation and test splits should not be read as expected field accuracy; only the separately recorded batches are independent, and they cover one home, with training data from October 7 and the fresh batch from October 12.
 
-\textbf{The result depends on a reasonable bandwidth.}  Testing the kernel density bandwidth at its extremes (Section~\ref{sec:densitymaps}) showed the pipeline degrades in both directions: too small a bandwidth fragments each class's density map into individual bumps around single data points, while too large a bandwidth merges the ring's hollow center into the surrounding density, defeating the reject mechanism entirely.  The validation-selected value $h=0.05$ avoided both failure modes here, but this value was tuned specifically to this dataset's scale and point density, and is not guaranteed to transfer to a different deployment without repeating the same validation sweep.
+\input{table4}
 
-% Table 2 reference.
-\input{table2}
+\textbf{Agreement is not accuracy.} The on-device-versus-desktop result shows the stored model is implemented faithfully, not that its decisions are right. Ground-truth accuracy comes from Table~\ref{tab:confusion} and the held-out batch.
 
-\textbf{What to measure next.}  The most direct way to close these gaps would be to repeat this evaluation on real sensor data from the intended application, with a labeled subset to check the stored model's decisions against true classes rather than only against the continuous model's own output.  A secondary measurement worth taking would be to sweep $\tau$ itself against that same labeled subset, to check whether $0.12$ is actually a reasonable operating point or merely one that happened to work for this synthetic dataset.
+\textbf{Choices were tuned to this dataset.} $h$, $G$, $\varepsilon$ and $\tau = 0.12$ were chosen for this two-feature dataset; $\tau$ was fixed rather than optimized. What to measure next: sweep $\tau$ against a labeled set that includes intermediate conditions, and repeat the evaluation in other rooms and weather.
 
 \end{document}
