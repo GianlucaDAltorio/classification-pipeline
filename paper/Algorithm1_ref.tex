@@ -3,9 +3,9 @@
 
 \begin{algorithm}[!ht]
 \caption{Table-lookup classification (online path).}
-\label{alg:lookup}
+\label{alg:classify}
 \begin{algorithmic}[1]
-\Require A raw query point $(x, y)$
+\Require raw query $(u, r)$ with $r$ the IR count; $r \leftarrow \log(1+r)$
 \Require One byte table $Q_c$ per class, each $G \times G$, values 0--255
 \Require The scaling bounds $(x_{\min}, x_{\max})$, $(y_{\min}, y_{\max})$ used in training
 \Require The grid size $G$ and a reject threshold $\tau$

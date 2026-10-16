@@ -10,7 +10,7 @@ import numpy as np
 from pipeline_common import (load_split_scaled, fit_density, normalise_peak,
                               VIEW_LIM, REJECT_TAU)
 
-BANDWIDTH = 0.05
+BANDWIDTH = 0.02
 DISPLAY_N = 160
 
 X = load_split_scaled()["train"]  # surface is built from training data

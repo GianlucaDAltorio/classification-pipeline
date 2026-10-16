@@ -11,11 +11,14 @@ come from surfaces.npz (training data only). Reusing test data to tune any
 of these would invalidate the number below.
 """
 import numpy as np
+import pandas as pd
 from pipeline_common import (load_split_scaled, make_grid, cell_of,
                               fit_density, normalise_peak, quantize, dequantize,
                               REJECT_TAU)
 
-BANDWIDTH = 0.05  # frozen: validation-selected
+BANDWIDTH = 0.02  # frozen: validation-selected
+
+names = {0: "LED", 1: "fluorescent", 2: "shade", 3: "sun"}
 
 data = load_split_scaled()
 Xtr, Xte = data["train"], data["test"]
@@ -65,3 +68,9 @@ for lt in LABELS:
     row = "".join(f"{int(((cont == lt) & (stor == lc)).sum()):>6}" for lc in LABELS)
     name = "unknown" if lt == -1 else f"class {lt} "
     print(f"{name:>10}{row}")
+
+# Print true label comparison.
+y_test = data["y_test"]
+pred = [("unknown" if s == -1 else names[s]) for s in stor]
+print("\nstored model vs true labels:", np.mean(np.array(pred) == y_test))
+print(pd.crosstab(pd.Series(y_test, name="true"), pd.Series(pred, name="predicted")))

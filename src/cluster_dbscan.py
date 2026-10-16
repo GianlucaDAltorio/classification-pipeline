@@ -7,14 +7,16 @@ can only carve the plane into straight-edged pieces.
 import matplotlib.pyplot as plt
 import numpy as np
 from sklearn.cluster import DBSCAN, KMeans
-from pipeline_common import load_split_scaled, VIEW_LIM
+from pipeline_common import load_split_scaled, VIEW_LIM, cluster_names
 #from pipeline_common import load_dataset
 
 #X = load_dataset() # load RAW dataset
-X = load_split_scaled()["train"]  # clustering sees TRAINING data only
+data = load_split_scaled()  # load RAW dataset
+X, y = data["train"], data["y_train"]   # clustering sees TRAINING data only
 
-db = DBSCAN(eps=0.06, min_samples=8)  # eps is meaningless unscaled
+db = DBSCAN(eps=0.02, min_samples=8)  # eps is meaningless unscaled
 labels = db.fit_predict(X)  # -1 = noise
+names = cluster_names(labels, y)
 
 classes = sorted(set(labels) - {-1})
 print(f"{len(classes)} clusters; {(labels == -1).sum()} noise")
@@ -29,12 +31,13 @@ MARKERS = ["o", "s", "^", "D", "v", "P"]
 GRAYS = ["0.75", "0.45", "0.15", "0.6", "0.3", "0.85"]
 
 
-def draw(ax, lab, title, show_noise):
+def draw(ax, lab, title, show_noise, names=None):
     for i, c in enumerate(sorted(set(lab) - {-1})):
         pts = X[lab == c]
+        name = names[c] if names else f"cluster {c}"
         ax.scatter(pts[:, 0], pts[:, 1], s=5, marker=MARKERS[i % len(MARKERS)],
                    facecolor=GRAYS[i % len(GRAYS)], edgecolor="black",
-                   linewidth=0.25, label=f"class {c} (n={len(pts)})")
+                   linewidth=0.25, label=f"{name} (n={len(pts)})")
     if show_noise:
         noise = X[lab == -1]
         ax.scatter(noise[:, 0], noise[:, 1], s=9, c="0.45", marker="x",
@@ -44,11 +47,14 @@ def draw(ax, lab, title, show_noise):
     ax.set_aspect("equal")
     ax.set_xlim(*VIEW_LIM)
     ax.set_ylim(*VIEW_LIM)
+    ax.legend(fontsize=6, loc="upper left")
 
-
-fig, axes = plt.subplots(1, 2, figsize=(7.4, 3.4), sharex=True, sharey=True)
-draw(axes[0], labels, "DBSCAN: shapes stay intact", show_noise=True)
-draw(axes[1], kmeans_labels, "k-means: shapes get sliced", show_noise=False)
+fig, axes = plt.subplots(1,2, figsize=(7.4, 3.4),
+                         sharex=True, sharey=True)
+draw(axes[0], labels, "DBSCAN plot",
+     show_noise=True, names=names)
+draw(axes[1], kmeans_labels, "k-means plot",
+     show_noise=False)
 axes[0].set_ylabel("scaled feature $x_2$")
 fig.savefig("../figures/generated/clustered_space.pdf",
             bbox_inches="tight", transparent=True)

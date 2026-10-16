@@ -5,8 +5,11 @@ they differ only in bytes per cell.
 """
 import matplotlib.pyplot as plt
 import numpy as np
-from pipeline_common import quantize, dequantize, GRID_N, VIEW_LIM
+from pipeline_common import quantize, dequantize, GRID_N, VIEW_LIM, load_split_scaled, cluster_names
 
+y = load_split_scaled()["y_train"]
+labels = np.loadtxt("labels.csv", dtype=int)
+names = cluster_names(labels, y)
 surfaces = np.load("surfaces.npz")
 classes = sorted(int(k[1:]) for k in surfaces.files)
 K = len(classes)
@@ -33,7 +36,7 @@ for ax, c in zip(np.atleast_1d(axes), classes):
                    aspect="equal", vmin=0, vmax=255)
     ax.set_xlim(*VIEW_LIM)
     ax.set_ylim(*VIEW_LIM)
-    ax.set_title(f"class {c}, stored uint8", fontsize=9)
+    ax.set_title(f"{names[c]}, stored uint8", fontsize=9)
     ax.set_xlabel("scaled feature $x_1$")
 np.atleast_1d(axes)[0].set_ylabel("scaled feature $x_2$")
 fig.colorbar(im, ax=axes, shrink=0.85, label="stored byte (0--255)")
