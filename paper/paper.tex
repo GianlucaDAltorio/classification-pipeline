@@ -42,8 +42,9 @@ Labeled data is cheap to collect in this particular case, which lets us check th
 
 \subsection{Proof of Concept}
 \label{sec:poc}
-Figure~\ref{fig:photo} shows the working prototype: an ESP32 development board with a GUVA-S12SD analog UV sensor on GPIO34 and a TSL2591 light sensor on I$^2$C (SDA on pin 21, SCL on pin 22), of which only the infrared channel is used. The device classifies live and prints the predicted class over serial. A short video of the device switching between sample conditions has been attached to the assignment submission.
+Figure~\ref{fig:photo} shows the working prototype: an ESP32 development board with a GUVA-S12SD analog UV sensor on GPIO34 and a TSL2591 light sensor on I$^2$C (SDA on pin 21, SCL on pin 22), of which only the infrared channel is used. The device classifies live and prints the predicted class over serial. A short video of the device switching between sample conditions has been attached to the assignment submission in the GitHub repository.
 
+% Figure 1.
 \begin{figure}[!ht]
   \centering
   \includegraphics[width=\columnwidth]{figures/generated/PoC.png}
@@ -56,7 +57,7 @@ Figure~\ref{fig:photo} shows the working prototype: an ESP32 development board w
 \section{Method and Setup}
 \label{sec:method}
 \subsection{Hardware and Data Collection}
-The UV signal comes from a GUVA-S12SD read on the ESP32's 12-bit ADC (0--4095). The IR signal comes from the TSL2591's IR channel over I$^2$C (16-bit counts, medium gain, 100\,ms integration time). Both channels are smoothed on the device with an exponential moving average, $y_t = \alpha x_t + (1-\alpha)\,y_{t-1}$ with $\alpha = 0.2$.  This gives a time constant of about 0.55 s at the effective rate of about 8.2 Hz (one sample per 122 ms).
+The UV signal comes from a GUVA-S12SD read on the ESP32's 12-bit ADC (0--4095). The IR signal comes from the TSL2591's IR channel over I$^2$C. Both channels are smoothed on the device with an exponential moving average, $y_t = \alpha x_t + (1-\alpha)\,y_{t-1}$ with $\alpha = 0.2$.  This gives a time constant of about 0.55 s at the effective rate of about 8.2 Hz (one sample per 122 ms).
 
 Four lighting conditions were recorded, one labeled CSV each: LED, fluorescent, shade and sun, with 360 samples per class (1\,440 in total), recorded on October 7, with columns \texttt{uv\_sensor}, \texttt{IR\_sensor} and \texttt{label}. The labels are used only to evaluate the model, never to build it.
 
@@ -83,6 +84,7 @@ Table~\ref{tab:confusion} compares DBSCAN's clusters with the ground-truth label
 
 \input{table1}
 
+% Figure 2.
 \begin{figure}[!ht]
   \centering
   \includegraphics[width=\columnwidth]{figures/generated/clustered_space.pdf}
@@ -94,6 +96,7 @@ Table~\ref{tab:confusion} compares DBSCAN's clusters with the ground-truth label
 \subsection{The Density Maps are Well-Formed and Survive Storage}
 Figure~\ref{fig:kde} shows the per-class density maps and Figure~\ref{fig:surface} the combined decision surface with the reject threshold. Figure~\ref{fig:stored} shows the same maps stored as one byte per cell on the $16\times16$ grid. Quantizing each value to one of 256 levels added a measured worst-case error of 0.177\% of a class's peak, within the theoretical bound of 0.196\%. The three indoor classes occupy adjacent bands along the IR axis. These bands follow from the scaling bounds stored in \texttt{model.h} and the 16-row grid: the log-scaled IR range (4.885 to 10.370) is divided into 16 equal rows, and converting the row edges back to counts gives boundaries near 185, 262 and 520. Reading the non-zero cells of the stored tables, shade covers row 0 (IR below about 185 counts), LED row 1 (about 185--262) and fluorescent rows 2--3 (about 262--520). The classes are therefore brightness bands rather than source types, which matters for the limitations in Section~\ref{sec:limitations}.
 
+% Figure 3.
 \begin{figure}[!ht]
   \centering
   \includegraphics[width=\columnwidth]{figures/generated/class_surfaces_continuous.pdf}
@@ -105,6 +108,7 @@ Figure~\ref{fig:kde} shows the per-class density maps and Figure~\ref{fig:surfac
 \subsection{What the Model Costs: Predicted}
 Table~\ref{tab:footprint} lists the flash cost of storing the maps at several precisions for $K = 4$ classes and $G = 16$. Storing as \texttt{uint8} predicts 1\,024 bytes of tables plus 16 bytes of bounds, an eightfold reduction versus float64.
 
+% Figure 4.
 \begin{figure}[!ht]
   \centering
   \includegraphics[width=\columnwidth]{figures/generated/total_distribution.pdf}
@@ -116,6 +120,7 @@ Table~\ref{tab:footprint} lists the flash cost of storing the maps at several pr
 \subsection{Filtering}
 Figure~\ref{fig:filter} plots the raw and filtered IR signal for the LED and fluorescent classes, with the class boundaries drawn. Both signals contain brief, sharp downward glitches, four in each plot, where the raw reading drops to between roughly 40 and 130 counts for a sample or two. Unfiltered, every one of these would cross a class boundary: an LED or fluorescent glitch would read as shade. The exponential moving average shrinks them. In the fluorescent recording all four filtered dips stay above the LED boundary (about 262 counts), so no glitch changes the class. In the LED recording three of four stay inside the LED band, but the largest dips to about 155 counts, below the shade boundary (about 185), so the filter reduces but does not remove misclassification. The price of the filter is lag: a step change takes about 1.4\,s to settle (about 2.5 time constants).
 
+% Figure 5.
 \begin{figure}[!ht]
   \centering
   \includegraphics[width=\columnwidth]{figures/generated/class_surfaces_discretized.pdf}
@@ -136,6 +141,7 @@ Against ground truth (Table~\ref{tab:heldout}), LED, fluorescent and shade were 
 \subsection{Measured Versus Predicted Cost}
 Table~\ref{tab:cost} compares prediction and measurement. Flash grew by 1\,060 bytes (289\,133 bytes with the table lookup versus 288\,073 bytes without it), against 1\,024 predicted for the tables alone. The extra 36 bytes are the other things the model brings with it that the prediction did not count: the 16 bytes of scaling bounds, and the class names, threshold and lookup code (about 20 bytes). Global variables (SRAM) were identical, 21\,944 bytes in both builds, so the tables add no SRAM because they stay in flash. Lookup latency was 4--8\,\textmu s, negligible next to the 122\,ms sample period.
 
+% Figure 6.
 \begin{figure}[!ht]
   \centering
   \includegraphics[width=\columnwidth]{figures/generated/raw_vs_filtered.pdf}
