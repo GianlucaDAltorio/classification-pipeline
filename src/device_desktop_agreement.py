@@ -13,7 +13,7 @@ script:
      condition, and the share of UNKNOWN predictions, listing any disagreements.
 
 Inputs:  labels.csv, surfaces.npz, run_*.csv, plus the pipeline_common module
-Output:  console, mirrored to replay_results.txt
+Output:  console, mirrored to device_desktop_agreement.txt
 """
 
 import numpy as np
