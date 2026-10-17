@@ -1,5 +1,5 @@
 # classification-pipeline
-Repository for Lab 3 in the Project I course.
+Repository for Lab 3 and Assignment 1 in the Project I course.
 
 A density-based classification pipeline for memory-constrained devices: DBSCAN finds the classes, kernel density estimates become small byte tables, and the device classifies with table lookups only.
 
