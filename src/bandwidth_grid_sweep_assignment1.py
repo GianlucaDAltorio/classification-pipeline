@@ -1,7 +1,7 @@
 """Part 2 -- choose (h, G) by end-to-end validation on the stored byte tables.
 
-The log-likelihood sweep (bandwidth_sweep.py), this script scores the shipped
-model itself: for every (grid size, bandwidth) pair, build the uint8 tables from
+Unlike the log-likelihood sweep (bandwidth_sweep.py), this script scores the shipped model 
+itself: for every (grid size, bandwidth) pair, build the uint8 tables from
 the training split, classify every validation point by table lookup, and report
 the share classified correctly and the share wrongly rejected as UNKNOWN. The test
 set is never read.
