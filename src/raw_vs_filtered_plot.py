@@ -7,7 +7,7 @@ model.h row boundaries, and prints per-light-source statistics.
 import pandas as pd
 import matplotlib.pyplot as plt
 
-files = ["raw_vs_filtered_led.csv", "raw_vs_filtered_fluorescent.csv"]   # your file names
+files = ["raw_vs_filtered_led.csv", "raw_vs_filtered_fluorescent.csv"]
 BOUNDS = [185.4, 261.6]     # model.h row edges in IR counts
 
 fig, axes = plt.subplots(1, 2, figsize=(10, 3.8), sharey=True)
