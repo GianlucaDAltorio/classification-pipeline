@@ -1,5 +1,5 @@
 """
-replay_check.py
+device_desktop_agreement.py
 
 Replays logged sensor runs through a Python copy of the on-device classifier
 and checks that the two agree.
